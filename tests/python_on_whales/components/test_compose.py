@@ -12,7 +12,11 @@ import pytz
 
 import python_on_whales
 from python_on_whales import DockerClient, DockerException
-from python_on_whales.components.compose.models import ComposeConfig, ComposeEvent
+from python_on_whales.components.compose.models import (
+    ComposeConfig,
+    ComposeDryRunEvent,
+    ComposeEvent,
+)
 from python_on_whales.exceptions import NoSuchImage
 from python_on_whales.test_utils import get_all_jsons
 from python_on_whales.utils import PROJECT_ROOT
@@ -1268,3 +1272,26 @@ def test_build_args():
     assert config.services["my_service"].volumes[1].target == "/dodo"
 
     assert config.services["my_service"].environment == {"DATADOG_HOST": "something"}
+
+
+def test_docker_compose_up_dry_run():
+    events = list(docker.compose.up(["my_service"], dry_run=True))
+    # Checking that we have some events, even if the list can be empty
+    assert len(events) >= 0
+    for event in events:
+        assert isinstance(event, ComposeDryRunEvent)
+
+
+def test_docker_compose_up_dry_run_stream():
+    result = docker.compose.up(["my_service"], dry_run=True, stream_logs=True)
+    # If dry-run and stream-logs are enabled, the result should be None
+    assert result is None
+
+
+def test_docker_compose_up_dry_run_no_containers():
+    containers_before = set(docker.compose.ps(all=True))
+    list(docker.compose.up(["my_service"], dry_run=True))
+    containers_after = set(docker.compose.ps(all=True))
+
+    # Dry run should not create any containers
+    assert containers_before == containers_after

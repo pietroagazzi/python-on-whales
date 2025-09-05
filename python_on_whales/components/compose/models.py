@@ -133,3 +133,15 @@ class ComposeEvent(BaseModel):
     service: Annotated[Optional[str], Field(alias="service")] = None
     time: Annotated[Optional[datetime], Field(alias="time")] = None
     type: Annotated[Optional[str], Field(alias="type")] = None
+
+
+class ComposeDryRunEvent(BaseModel):
+    dry_run: Annotated[Optional[bool], Field(alias="dry-run")] = None
+    tail: Annotated[Optional[bool], Field(alias="tail")] = None
+    id: Annotated[Optional[str], Field(alias="id")] = None
+    parent_id: Annotated[Optional[str], Field(alias="parent_id")] = None
+    text: Annotated[Optional[str], Field(alias="text")] = None
+    status: Annotated[Optional[str], Field(alias="status")] = None
+    current: Annotated[Optional[int], Field(alias="current")] = None
+    total: Annotated[Optional[int], Field(alias="total")] = None
+    percent: Annotated[Optional[int], Field(alias="percent")] = None

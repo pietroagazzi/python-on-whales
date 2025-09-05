@@ -13,7 +13,7 @@ from python_on_whales.client_config import DockerCLICaller
 from python_on_whales.components.compose.models import (
     ComposeConfig,
     ComposeEvent,
-    ComposeProject,
+    ComposeProject, ComposeDryRunEvent,
 )
 from python_on_whales.utils import (
     format_mapping_for_cli,
@@ -959,6 +959,7 @@ class ComposeCLI(DockerCLICaller):
         pull: Literal["always", "missing", "never", None] = ...,
         stream_logs: Literal[True] = ...,
         wait_timeout: Optional[int] = ...,
+        dry_run: bool = ...,
     ) -> Iterable[Tuple[str, bytes]]: ...
 
     @overload
@@ -984,7 +985,34 @@ class ComposeCLI(DockerCLICaller):
         pull: Literal["always", "missing", "never", None] = ...,
         stream_logs: Literal[False] = ...,
         wait_timeout: Optional[int] = ...,
+        dry_run: Literal[False] = ...,
     ) -> None: ...
+
+    @overload
+    def up(
+        self,
+        services: Union[List[str], str, None] = ...,
+        build: bool = ...,
+        detach: bool = ...,
+        abort_on_container_exit: bool = ...,
+        scales: Dict[str, int] = ...,
+        attach_dependencies: bool = ...,
+        force_recreate: bool = ...,
+        recreate: bool = ...,
+        no_build: bool = ...,
+        remove_orphans: bool = ...,
+        renew_anon_volumes: bool = ...,
+        color: bool = ...,
+        log_prefix: bool = ...,
+        start: bool = ...,
+        quiet: bool = ...,
+        wait: bool = ...,
+        no_attach_services: Union[List[str], str, None] = ...,
+        pull: Literal["always", "missing", "never", None] = ...,
+        stream_logs: Literal[False] = ...,
+        wait_timeout: Optional[int] = ...,
+        dry_run: Literal[True] = ...,
+    ) -> Iterator[ComposeDryRunEvent]: ...
 
     def up(
         self,
@@ -1008,6 +1036,7 @@ class ComposeCLI(DockerCLICaller):
         pull: Literal["always", "missing", "never", None] = None,
         stream_logs: bool = False,
         wait_timeout: Optional[int] = None,
+        dry_run: bool = False,
     ):
         """Start the containers.
 
@@ -1053,13 +1082,24 @@ class ComposeCLI(DockerCLICaller):
                 See [the streaming guide](https://gabrieldemarmiesse.github.io/python-on-whales/user_guide/docker_run/#stream-the-output) if you are
                 not familiar with the streaming of logs in Python-on-whales.
             wait_timeout: Maximum duration to wait for the project to be running|healthy
+            dry_run: If `True`, simulate the execution without actually performing any changes.
+                Shows what would happen during the up operation. When `stream_logs=False`, returns
+                an Iterator of `ComposeDryRunEvent` objects containing debug information about the
+                simulation.
         """
         if quiet and stream_logs:
             raise ValueError(
                 "It's not possible to have stream_logs=True and quiet=True at the same time. "
                 "Only one can be activated at a time."
             )
-        full_cmd = self.docker_compose_cmd + ["up"]
+
+        full_cmd = self.docker_compose_cmd
+
+        if dry_run:
+            full_cmd += ["--dry-run", "--progress", "json"]
+
+        full_cmd += ["up"]
+
         full_cmd.add_flag("--build", build)
         full_cmd.add_flag("--detach", detach)
         full_cmd.add_flag("--wait", wait)
@@ -1089,10 +1129,26 @@ class ComposeCLI(DockerCLICaller):
             services = to_list(services)
             full_cmd += services
 
-        if stream_logs:
+        # Handle the different execution modes based on dry_run and stream_logs
+        if dry_run and not stream_logs:
+            # Dry-run mode with JSON output parsing
+            iterator = stream_stdout_and_stderr(full_cmd)
+            for stream_origin, stream_content in iterator:
+                if stream_origin in ("stdout", "stderr"):
+                    try:
+                        json_data = json.loads(stream_content)
+                        # Yield only dry-run related events
+                        if "dry-run" in json_data:
+                            yield ComposeDryRunEvent(**json_data)
+                    except (json.JSONDecodeError, ValueError):
+                        # Skip lines that are not valid JSON
+                        pass
+            return None
+        elif stream_logs:
+            # Stream logs mode (works with both normal and dry-run execution)
             return stream_stdout_and_stderr(full_cmd)
         else:
-            # important information is written to both stdout AND stderr.
+            # Normal execution without streaming
             run(full_cmd, capture_stdout=quiet, capture_stderr=quiet)
 
     def version(self) -> str:
